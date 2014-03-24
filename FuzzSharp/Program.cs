@@ -15,7 +15,38 @@ namespace FuzzSharp
     class Program
     {
         private const string WinDbgPath = "windbg";
-        private static string dbgArgs;
+
+        private static string dbgArgs = ".logopen {0}.log;" +
+                                        "g;" +
+                                        ".echo;" +
+                                        ".echo #############;" +
+                                        ".echo # REGISTERS #;" +
+                                        ".echo #############;" +
+                                        ".echo;" +
+                                        "r;" +
+                                        ".echo;" +
+                                        ".echo ###############;" +
+                                        ".echo # STACK TRACE #;" +
+                                        ".echo ###############;" +
+                                        ".echo;" +
+                                        "kP;" +
+                                        ".echo;" +
+                                        ".echo ###############;" +
+                                        ".echo # DISASSEMBLY #;"+
+                                        ".echo ###############;" +
+                                        ".echo;" +
+                                        "ub;" +
+                                        "uu;" +
+                                        ".echo;" +
+                                        ".echo ################;" +
+                                        ".echo # !EXPLOITABLE #;" +
+                                        ".echo ################;" +
+                                        ".echo;" +
+                                        "!load winext\\msec.dll;" +
+                                        "!exploitable;" +
+                                        ".logclose;" +
+                                        ".dump /ma {0}.dmp;" +
+                                        "q";
         static void Main(string[] args)
         {
             string app = args[0];
@@ -35,9 +66,12 @@ namespace FuzzSharp
             string fDir = Path.GetDirectoryName(fOriginal);
             string fName = Path.GetFileNameWithoutExtension(fOriginal);
             string fExt = Path.GetExtension(fOriginal);
-            string fFuzzed = Path.Combine(fDir, String.Format("{0}-{1}{2}", fName, fHash, fExt));
-            string fLog = Path.Combine(fDir, String.Format("{0}-{1}{2}", fName, fHash, ".log"));
-            dbgArgs = String.Format(".logopen {0};g;!load winext\\msec.dll;!exploitable;.logclose;q", fLog);
+            string fNameFuzzed = String.Format("{0}-{1}", fName, fHash);
+            string fFuzzedNoExt = Path.Combine(fDir, fNameFuzzed);
+            string fFuzzed = fFuzzedNoExt + fExt;
+            string fLog = fFuzzedNoExt + ".log";
+            string fDump = fFuzzedNoExt + ".dmp";
+            string dbCommandLine = String.Format(dbgArgs, fFuzzedNoExt);
 
             // Write to file
             File.WriteAllBytes(fFuzzed, buf);
@@ -45,7 +79,7 @@ namespace FuzzSharp
             // Run
             Process proc = new Process();
             proc.StartInfo.FileName = WinDbgPath;
-            proc.StartInfo.Arguments = String.Format("-c \"{2}\" \"{0}\" \"{1}\"", app, fFuzzed, dbgArgs);
+            proc.StartInfo.Arguments = String.Format("-c \"{2}\" \"{0}\" \"{1}\"", app, fFuzzed, dbCommandLine);
             proc.Start();
             Thread.Sleep(1000);
 
@@ -61,20 +95,28 @@ namespace FuzzSharp
             {
                 if (line.StartsWith("Exploitability Classification"))
                 {
-                    string exploitability = line.Split(':')[1].Trim();
-                    switch (exploitability)
+                    string exploitability = line.Split(':')[1].Trim().ToUpper();
+                    string fBucketDir = Path.Combine(fDir, exploitability);
+                                      
+                    // Delete if not an exception
+                    if (exploitability != "NOT_AN_EXCEPTION")
                     {
-                        case "NOT_AN_EXCEPTION":
-                            File.Delete(fFuzzed);
-                            File.Delete(fLog);
-                            break;
-                        default:
-                            // do nothing
-                            break;
+                        if (!Directory.Exists(fBucketDir))
+                        {
+                            Directory.CreateDirectory(fBucketDir);
+                        }
+                        File.Copy(fFuzzed, Path.Combine(fBucketDir, fNameFuzzed + fExt));
+                        File.Copy(fLog, Path.Combine(fBucketDir, fNameFuzzed + ".log"));
+                        File.Copy(fDump, Path.Combine(fBucketDir, fNameFuzzed + ".dmp"));
                     }
+
+                    // Else move to the correct bucket
+                    // TODO: do additional filtering here
+                    File.Delete(fFuzzed);
+                    File.Delete(fLog);
+                    File.Delete(fDump);
                 }
             }
-            // TODO: delete log and file if not exploitable
 
         }
 
@@ -157,6 +199,7 @@ namespace FuzzSharp
 
         private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
+        // These are right. Trust me. I'm a professional
         public const int WM_SYSCOMMAND = 0x0112;
         public const int SC_CLOSE = 0xF060;
 
