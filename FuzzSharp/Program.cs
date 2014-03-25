@@ -50,9 +50,17 @@ namespace FuzzSharp
         static void Main(string[] args)
         {
             string app = args[0];
-            string fOriginal = args[1];
+            string templateDir = args[1];
             double factor = double.Parse(args[2]);
 
+            foreach (string fOriginal in Directory.EnumerateFiles(templateDir))
+            {
+                ProcessFile(fOriginal, app, factor);
+            }
+        }
+
+        private static void ProcessFile(string fOriginal, string app, double factor)
+        {
             // Read and fuzz
             byte[] buf = File.ReadAllBytes(fOriginal);
             MillerFuzz(buf, factor);
@@ -61,7 +69,7 @@ namespace FuzzSharp
             string fHash;
             using (var md5 = MD5.Create())
             {
-                fHash = BitConverter.ToString(md5.ComputeHash(buf)).Replace("-","").ToLower();
+                fHash = BitConverter.ToString(md5.ComputeHash(buf)).Replace("-", "").ToLower();
             }
             string fDir = Path.GetDirectoryName(fOriginal);
             string fName = Path.GetFileNameWithoutExtension(fOriginal);
@@ -97,7 +105,7 @@ namespace FuzzSharp
                 {
                     string exploitability = line.Split(':')[1].Trim().ToUpper();
                     string fBucketDir = Path.Combine(fDir, exploitability);
-                                      
+
                     // Delete if not an exception
                     if (exploitability != "NOT_AN_EXCEPTION")
                     {
@@ -117,7 +125,6 @@ namespace FuzzSharp
                     File.Delete(fDump);
                 }
             }
-
         }
 
         /// <summary>
