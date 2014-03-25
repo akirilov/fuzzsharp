@@ -16,7 +16,7 @@ namespace FuzzSharp
     {
         private const string WinDbgPath = "windbg";
 
-        private static string dbgArgs = ".logopen {0}.log;" +
+        private static string dbgArgs = ".logopen {0}-l.log;" +
                                         "g;" +
                                         ".echo;" +
                                         ".echo #############;" +
@@ -45,24 +45,29 @@ namespace FuzzSharp
                                         "!load winext\\msec.dll;" +
                                         "!exploitable;" +
                                         ".logclose;" +
-                                        ".dump /ma {0}.dmp;" +
+                                        ".dump /ma {0}-d.dmp;" +
                                         "q";
         static void Main(string[] args)
         {
             string app = args[0];
             string templateDir = args[1];
             double factor = double.Parse(args[2]);
+            int iterations = int.Parse(args[3]);
+            string[] templates = Directory.EnumerateFiles(templateDir).ToArray();
+            Random rand = new Random();
 
-            foreach (string fOriginal in Directory.EnumerateFiles(templateDir))
+            for (int i = 0; i < iterations; i++)
             {
+                // Get a random file and process it
+                string fOriginal = templates[rand.Next(templates.Length)];
                 ProcessFile(fOriginal, app, factor);
             }
         }
 
-        private static void ProcessFile(string fOriginal, string app, double factor)
+        private static void ProcessFile(string oFile, string app, double factor)
         {
             // Read and fuzz
-            byte[] buf = File.ReadAllBytes(fOriginal);
+            byte[] buf = File.ReadAllBytes(oFile);
             MillerFuzz(buf, factor);
 
             // Generate output name
@@ -71,28 +76,34 @@ namespace FuzzSharp
             {
                 fHash = BitConverter.ToString(md5.ComputeHash(buf)).Replace("-", "").ToLower();
             }
-            string fDir = Path.GetDirectoryName(fOriginal);
-            string fName = Path.GetFileNameWithoutExtension(fOriginal);
-            string fExt = Path.GetExtension(fOriginal);
-            string fNameFuzzed = String.Format("{0}-{1}", fName, fHash);
-            string fFuzzedNoExt = Path.Combine(fDir, fNameFuzzed);
-            string fFuzzed = fFuzzedNoExt + fExt;
-            string fLog = fFuzzedNoExt + ".log";
-            string fDump = fFuzzedNoExt + ".dmp";
-            string dbCommandLine = String.Format(dbgArgs, fFuzzedNoExt);
+            string oDir = Path.GetDirectoryName(oFile);
+            string oName = Path.GetFileNameWithoutExtension(oFile);
+            string ext = Path.GetExtension(oFile);
+            string fName = String.Format("{0}-{1}", oName, fHash);
+            string fFileNoExt = Path.Combine(oDir, fName);
+            string fFile = fFileNoExt + ext;
+            string fLog = fFileNoExt + "-l.log";
+            string fDump = fFileNoExt + "-d.dmp";
+            string dbCommandLine = String.Format(dbgArgs, fFileNoExt);
 
             // Write to file
-            File.WriteAllBytes(fFuzzed, buf);
+            File.WriteAllBytes(fFile, buf);
 
             // Run
             Process proc = new Process();
             proc.StartInfo.FileName = WinDbgPath;
-            proc.StartInfo.Arguments = String.Format("-c \"{2}\" \"{0}\" \"{1}\"", app, fFuzzed, dbCommandLine);
+            proc.StartInfo.Arguments = String.Format("-c \"{2}\" \"{0}\" \"{1}\"", app, fFile, dbCommandLine);
             proc.Start();
-            Thread.Sleep(1000);
 
-            // Close Popups
-            EnumWindows(GetKillChildWindowProcByPid(proc.Id), IntPtr.Zero);
+            while (!proc.HasExited)
+            {
+                // Sleep for 0.1 seconds
+                Thread.Sleep(100);
+                // Close Popups
+                EnumWindows(GetKillChildWindowProcByPid(proc.Id), IntPtr.Zero);
+                // Refresh
+                proc.Refresh();
+            }
             //int lastChild = GetLastChild(Process.GetCurrentProcess().Id);
             //Process.GetProcessById(lastChild).Kill();
             proc.WaitForExit();
@@ -104,23 +115,27 @@ namespace FuzzSharp
                 if (line.StartsWith("Exploitability Classification"))
                 {
                     string exploitability = line.Split(':')[1].Trim().ToUpper();
-                    string fBucketDir = Path.Combine(fDir, exploitability);
+                    string bDir = Path.Combine(oDir, exploitability);
+                    string bFileNoExt = Path.Combine(bDir, fName);
+                    string bFile = bFileNoExt + ext;
+                    string bLog = bFileNoExt + "-l.log";
+                    string bDump = bFileNoExt + "-d.dmp";
 
                     // Delete if not an exception
                     if (exploitability != "NOT_AN_EXCEPTION")
                     {
-                        if (!Directory.Exists(fBucketDir))
+                        if (!Directory.Exists(bDir))
                         {
-                            Directory.CreateDirectory(fBucketDir);
+                            Directory.CreateDirectory(bDir);
                         }
-                        File.Copy(fFuzzed, Path.Combine(fBucketDir, fNameFuzzed + fExt));
-                        File.Copy(fLog, Path.Combine(fBucketDir, fNameFuzzed + ".log"));
-                        File.Copy(fDump, Path.Combine(fBucketDir, fNameFuzzed + ".dmp"));
+                        File.Copy(fFile, bFile);
+                        File.Copy(fLog, bLog);
+                        File.Copy(fDump, bDump);
                     }
 
                     // Else move to the correct bucket
                     // TODO: do additional filtering here
-                    File.Delete(fFuzzed);
+                    File.Delete(fFile);
                     File.Delete(fLog);
                     File.Delete(fDump);
                 }
