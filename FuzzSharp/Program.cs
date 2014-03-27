@@ -15,6 +15,7 @@ namespace FuzzSharp
     class Program
     {
         private const string WinDbgPath = "windbg";
+        private const int SleepTimeMillis = 100;
 
         private static string dbgArgs = ".logopen {0}-l.log;" +
                                         "g;" +
@@ -97,8 +98,8 @@ namespace FuzzSharp
 
             while (!proc.HasExited)
             {
-                // Sleep for 0.1 seconds
-                Thread.Sleep(100);
+                // Sleep for 1 second until the process is dead
+                Thread.Sleep(SleepTimeMillis);
                 // Close Popups
                 EnumWindows(GetKillChildWindowProcByPid(proc.Id), IntPtr.Zero);
                 // Refresh
