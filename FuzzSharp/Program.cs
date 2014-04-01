@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Configuration;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -14,8 +15,8 @@ namespace FuzzSharp
 {
     class Program
     {
-        private const string WinDbgPath = "windbg";
-        private const int SleepTimeMillis = 100;
+        private static string WinDbgPath;
+        private static int SleepTimeMillis;
 
         private static string dbgArgs = ".logopen {0}-l.log;" +
                                         "g;" +
@@ -56,6 +57,9 @@ namespace FuzzSharp
             int iterations = int.Parse(args[3]);
             string[] templates = Directory.EnumerateFiles(templateDir).ToArray();
             Random rand = new Random();
+
+            WinDbgPath = ConfigurationManager.AppSettings["WinDbgPath"];
+            SleepTimeMillis = int.Parse(ConfigurationManager.AppSettings["SleepTimeMillis"]);
 
             for (int i = 0; i < iterations; i++)
             {
